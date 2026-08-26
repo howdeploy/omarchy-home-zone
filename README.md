@@ -1,88 +1,97 @@
 # Home Zone
 
-Десктопные виджеты поверх обоев для **Omarchy** (Arch + Hyprland, quickshell).
-Плитки: часы, компактный лаунчер выбранных приложений, системное меню Omarchy
-и обязательная кнопка настроек Home Zone. Встроенное окно настроек позволяет
-выбрать от нуля до четырёх приложений, перемещать плитки и менять их размер
-за любую грань или угол внутри фиксированной сетки `10 × 4`. Выбор приложений
-применяется сразу; Save/Cancel управляют черновиком раскладки. Подсетка повышает
-точность resize, но сохраняет установленный внешний размер `842 × 350`.
+[English](README.md) · [Russian](README.ru.md)
 
-Все поверхности по умолчанию получают живые роли активной темы Omarchy:
-`Color.accent`, `Color.bar.*`, `Color.muted`, `Color.urgent` и
-`Color.background`. Жёсткой палитры CanvasTTY в плагине нет.
+![Home Zone running on Omarchy](preview.png)
 
-ID плагина: `io.github.howdeploy.home-zone`
+A theme-aware desktop dashboard for **Omarchy** (Arch Linux, Hyprland, and
+quickshell). Home Zone provides a large clock, a compact launcher for selected
+applications, an Omarchy system-menu button, and a dedicated settings button.
 
-## Установка
+The built-in settings window lets you select zero to four launcher applications,
+move tiles, and resize them from any edge or corner within a fixed `10 × 4` grid.
+Application selection is applied immediately, while Save and Cancel control the
+layout draft. The finer grid improves resize precision without changing the
+established `842 × 350` outer size.
+
+Every surface follows the active Omarchy theme by default through live roles such
+as `Color.accent`, `Color.bar.*`, `Color.muted`, `Color.urgent`, and
+`Color.background`. The plugin does not ship a hard-coded CanvasTTY palette.
+
+Plugin ID: `io.github.howdeploy.home-zone`
+
+## Installation
 
 ```bash
 omarchy plugin add https://github.com/howdeploy/omarchy-home-zone.git --enable
 ```
 
-Установщик клонирует репозиторий в `~/.config/omarchy/plugins/io.github.howdeploy.home-zone/`,
-проверяет манифест и включает плагин. Конфиг создаётся автоматически при первом
-запуске.
+The command clones the repository into
+`~/.config/omarchy/plugins/io.github.howdeploy.home-zone/`, validates the
+manifest, and enables the plugin. The user configuration is created
+when settings are first saved; until then, Home Zone uses its built-in defaults.
 
-## Обновление
+## Updating
 
 ```bash
 omarchy plugin update io.github.howdeploy.home-zone
 ```
 
-Обновление — проверяемый fast-forward: при локальных правках внутри установленного
-каталога плагина обновление будет отклонено (сначала удали или закоммить свои
-изменения).
+Updates are verified fast-forwards. If the installed plugin directory contains
+local changes, the update is rejected until those changes are removed or
+committed.
 
-## Удаление
+## Uninstalling
 
 ```bash
 omarchy plugin remove io.github.howdeploy.home-zone
 ```
 
-Пользовательский конфиг `~/.config/omarchy/home-zone.json` при этом остаётся —
-удалить его можно вручную.
+The user configuration at `~/.config/omarchy/home-zone.json` is preserved and
+can be removed manually if it is no longer needed.
 
-## Разработка
+## Development
 
-`install.sh` — **dev-helper, официальный установщик его не запускает**. Он
-синхронизирует рабочее дерево репозитория в установочный каталог для быстрой
-итерации (бэкапит предыдущую установку, не трогает git-чекауты, установленные
-через `omarchy plugin add`):
+`install.sh` is a **development helper; the official Omarchy plugin installer
+does not run it**. It synchronizes the repository working tree into the plugin
+directory for fast local iteration. The helper backs up an existing development
+installation and refuses to overwrite a Git checkout installed with
+`omarchy plugin add`.
 
 ```bash
 ./install.sh
 ```
 
-## Конфиг
+## Configuration
 
-`~/.config/omarchy/home-zone.json` — перечитывается на лету (без рестарта):
+Home Zone watches `~/.config/omarchy/home-zone.json` and reloads it without a
+shell restart.
 
-| Ключ | Что делает |
+| Key | Purpose |
 |---|---|
-| `grid.columns / cellWidth / cellHeight / gap` | сетка |
-| `card.visible / backgroundAlpha / radius / padding` | внешняя карточка |
-| `colors.<widget>Background / <widget>Text` | оверрайд роли конкретной плитки (`clock`, `launcher`, `menu`, `settings`) |
-| `colors.tileBackground / text / cardBackground` | общий совместимый оверрайд поверх системной темы |
-| `colors.launcherTile / border` | оверрайд внутренних кнопок launcher и границ |
-| `tiles[]` | плитки: `widget`, `col`, `row`, `colspan`, `rowspan`, `settings` |
+| `grid.columns / cellWidth / cellHeight / gap` | Grid geometry |
+| `card.visible / backgroundAlpha / radius / padding` | Outer card |
+| `colors.<widget>Background / <widget>Text` | Per-widget theme-role override for `clock`, `launcher`, `menu`, or `settings` |
+| `colors.tileBackground / text / cardBackground` | Shared compatibility override on top of the system theme |
+| `colors.launcherTile / border` | Launcher-button and tile-border overrides |
+| `tiles[]` | Tile definitions: `widget`, `col`, `row`, `colspan`, `rowspan`, and `settings` |
 
-У launcher в `settings.appIds` хранится упорядоченный список desktop ID.
-Если ключ отсутствует, показываются первые четыре приложения из
-`shell.appLibrary`. Явный пустой массив `appIds: []` означает пустой launcher;
-это не fallback.
+The launcher's `settings.appIds` value stores an ordered list of desktop IDs. If
+the key is absent, Home Zone displays the first four applications from
+`shell.appLibrary`. An explicit empty array, `appIds: []`, produces an empty
+launcher and does not trigger the fallback.
 
-## Зависимости
+## Dependencies
 
-- Omarchy с шеллом на quickshell (`omarchy-shell`);
-- плитка `menu` вызывает системное меню Omarchy через
+- Omarchy with its quickshell-based shell (`omarchy-shell`).
+- The `menu` tile summons Omarchy's system menu through
   `omarchy-shell shell summon omarchy.menu`.
 
-## Лицензия
+## License
 
-MIT — см. [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
-## Документация
+## Documentation
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — как устроен плагин
-- [docs/widget-authoring.md](docs/widget-authoring.md) — как добавить свой виджет (в т.ч. агенту)
+- [Architecture and plugin lifecycle](docs/ARCHITECTURE.md)
+- [Writing a Home Zone widget](docs/widget-authoring.md)
