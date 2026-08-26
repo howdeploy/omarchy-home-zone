@@ -230,62 +230,50 @@ Item {
     root.resizeCandidateValid = true
   }
 
-  function rowTiles(tiles, row, excludedIndex) {
-    var values = []
+  function placementOverlapArea(left, right) {
+    var width = Math.max(0, Math.min(left.col + left.colspan, right.col + right.colspan)
+      - Math.max(left.col, right.col))
+    var height = Math.max(0, Math.min(left.row + left.rowspan, right.row + right.rowspan)
+      - Math.max(left.row, right.row))
+    return width * height
+  }
+
+  function placementContainsCell(tile, col, row) {
+    return col >= tile.col && col < tile.col + tile.colspan
+      && row >= tile.row && row < tile.row + tile.rowspan
+  }
+
+  function collisionTargetIndex(index, candidate, pointerCol, pointerRow, tiles) {
+    var bestIndex = -1
+    var bestArea = 0
     for (var i = 0; i < tiles.length; i++) {
-      if (i === excludedIndex || Number(tiles[i].row || 0) !== row) continue
-      values.push({ index: i, tile: root.clone(tiles[i]) })
+      if (i === index || !root.placementsOverlap(candidate, tiles[i])) continue
+      if (root.placementContainsCell(tiles[i], pointerCol, pointerRow)) return i
+      var area = root.placementOverlapArea(candidate, tiles[i])
+      if (area > bestArea) {
+        bestArea = area
+        bestIndex = i
+      }
     }
-    values.sort(function(left, right) { return Number(left.tile.col || 0) - Number(right.tile.col || 0) })
-    return values
+    return bestIndex
   }
 
-  function packedRow(items, row) {
-    var packed = []
-    var col = 0
-    for (var i = 0; i < items.length; i++) {
-      var tile = root.clone(items[i].tile)
-      tile.col = col
-      tile.row = row
-      col += Number(tile.colspan || 1)
-      packed.push({ index: items[i].index, tile: tile })
-    }
-    return col <= root.gridColumns ? packed : null
-  }
-
-  function insertByColumn(items, entry, targetCol) {
-    var next = items.slice()
-    var insertion = next.length
-    for (var i = 0; i < next.length; i++) {
-      var midpoint = Number(next[i].tile.col || 0) + Number(next[i].tile.colspan || 1) / 2
-      if (targetCol < midpoint) { insertion = i; break }
-    }
-    next.splice(insertion, 0, entry)
+  function tileInSlot(tile, slot) {
+    var next = root.clone(tile)
+    next.col = Number(slot.col || 0)
+    next.row = Number(slot.row || 0)
+    next.colspan = Number(slot.colspan || 1)
+    next.rowspan = Number(slot.rowspan || 1)
     return next
   }
 
-  function closestOccupiedRow(tiles, targetRow) {
-    var rows = []
-    for (var i = 0; i < tiles.length; i++) {
-      var row = Number(tiles[i].row || 0)
-      if (rows.indexOf(row) === -1) rows.push(row)
-    }
-    if (rows.length === 0) return 0
-    var closest = rows[0]
-    for (var j = 1; j < rows.length; j++) {
-      if (Math.abs(rows[j] - targetRow) < Math.abs(closest - targetRow)) closest = rows[j]
-    }
-    return closest
-  }
-
-  // The fixed boundary is full, so a cross-row drop swaps row contents and a
-  // same-row drop reorders them. This preserves CanvasTTY's no-overlap rule
-  // without growing the established 842x350 Home Zone.
-  function dropTile(index, targetCol, targetRow) {
+  // A free drop keeps the tile's size. Dropping onto another tile exchanges
+  // their complete slots, so both position and size change atomically and the
+  // fixed 10x4 layout can never contain an overlap.
+  function dropTile(index, targetCol, targetRow, pointerCol, pointerRow) {
     var current = root.clone(root.draftTiles)
     if (index < 0 || index >= current.length) return
     var moved = root.clone(current[index])
-    var sourceRow = Number(moved.row || 0)
     var requestedRow = Math.max(0, Math.min(root.gridRows - moved.rowspan, Math.round(targetRow)))
     var requestedCol = Math.max(0, Math.min(root.gridColumns - moved.colspan, Math.round(targetCol)))
 
@@ -301,28 +289,17 @@ Item {
       return
     }
 
-    // The default layout fills both bands. Preserve the existing convenient
-    // reorder/swap behaviour by snapping an overlapping drop to the nearest
-    // occupied row, then packing that band without overlap.
-    var row = root.closestOccupiedRow(current, requestedRow)
-    var col = Math.max(0, Math.min(root.gridColumns - 1, Math.round(targetCol)))
-    var sourceItems = root.rowTiles(current, sourceRow, index)
-    var targetItems = sourceRow === row ? sourceItems : root.rowTiles(current, row, -1)
-    var movedEntry = { index: index, tile: moved }
-    var targetPacked = root.packedRow(root.insertByColumn(sourceItems, movedEntry, col), row)
-    var sourcePacked = sourceRow === row ? [] : root.packedRow(targetItems, sourceRow)
-
-    if (!targetPacked || !sourcePacked) {
-      root.feedback = "That placement does not fit the fixed Home Zone."
-      root.draftTiles = current
+    var targetIndex = root.collisionTargetIndex(index, direct, pointerCol, pointerRow, current)
+    if (targetIndex < 0) {
+      root.feedback = "Drop onto a tile to swap, or choose an empty grid position."
       return
     }
 
-    var assignments = targetPacked.concat(sourcePacked)
-    for (var i = 0; i < assignments.length; i++) current[assignments[i].index] = assignments[i].tile
+    var target = root.clone(current[targetIndex])
+    current[index] = root.tileInSlot(moved, target)
+    current[targetIndex] = root.tileInSlot(target, moved)
     if (!root.layoutValid(current)) {
-      root.feedback = "Tiles cannot overlap or leave the Home Zone."
-      root.draftTiles = root.clone(root.draftTiles)
+      root.feedback = "That swap does not fit the fixed Home Zone."
       return
     }
     root.feedback = ""
@@ -703,7 +680,7 @@ Item {
               anchors.leftMargin: 14
               anchors.rightMargin: 14
               anchors.topMargin: 5
-              text: "Drag the centre to move. Drag any edge or corner to resize. The 10 × 4 boundary is fixed."
+              text: "Drag the centre to move. Drop onto another tile to swap positions and sizes. Drag any edge or corner to resize."
               color: Util.alpha(Color.popups.text, 0.68)
               font.family: Style.font.family
               font.pixelSize: Style.font.bodySmall
@@ -759,115 +736,138 @@ Item {
                   height: Number(tile.rowspan || 1) * layoutPreview.cellHeight
                     + (Number(tile.rowspan || 1) - 1) * layoutPreview.gap
 
-                  BorderSurface {
-                    anchors.fill: parent
-                    color: previewTile.surfaceColor
-                    borderSpec: Border.flat(
-                      root.resizingIndex === previewTile.index && !root.resizeCandidateValid
-                        ? Color.urgent
-                        : Util.alpha(Color.popups.text, 0.35),
-                      root.resizingIndex === previewTile.index ? 2 : 1)
-                    radius: 10
-                  }
+                  // Drag only this visual surface. The delegate itself stays
+                  // bound to modelData, so MouseArea can never destroy the
+                  // grid-bound x/y bindings while previewing a move.
+                  Item {
+                    id: dragSurface
+                    width: previewTile.width
+                    height: previewTile.height
+                    x: 0
+                    y: 0
 
-                  Text {
-                    anchors.centerIn: parent
-                    text: previewTile.widgetId.charAt(0).toUpperCase() + previewTile.widgetId.slice(1)
-                      + "\n" + Number(previewTile.tile.colspan || 1) + " × " + Number(previewTile.tile.rowspan || 1)
-                    color: root.previewForeground(previewTile.widgetId, previewTile.surfaceColor)
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.bodySmall
-                    font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
-                  }
-
-                  MouseArea {
-                    z: 5
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.SizeAllCursor
-                    drag.target: previewTile
-                    drag.axis: Drag.XAndYAxis
-                    drag.minimumX: 0
-                    drag.maximumX: layoutPreview.width - previewTile.width
-                    drag.minimumY: 0
-                    drag.maximumY: layoutPreview.height - previewTile.height
-                    drag.smoothed: false
-                    onReleased: {
-                      var col = Math.round(previewTile.x / (layoutPreview.cellWidth + layoutPreview.gap))
-                      var row = Math.round(previewTile.y / (layoutPreview.cellHeight + layoutPreview.gap))
-                      root.dropTile(previewTile.index, col, row)
+                    BorderSurface {
+                      anchors.fill: parent
+                      color: previewTile.surfaceColor
+                      borderSpec: Border.flat(
+                        root.resizingIndex === previewTile.index && !root.resizeCandidateValid
+                          ? Color.urgent
+                          : Util.alpha(Color.popups.text, 0.35),
+                        root.resizingIndex === previewTile.index ? 2 : 1)
+                      radius: 10
                     }
-                  }
 
-                  // CanvasTTY owns resize from every edge and corner. Only
-                  // north-west and south-east draw a cue; all eight targets
-                  // keep generous hit areas and the appropriate cursor.
-                  Repeater {
-                    model: ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
+                    Text {
+                      anchors.centerIn: parent
+                      text: previewTile.widgetId.charAt(0).toUpperCase() + previewTile.widgetId.slice(1)
+                        + "\n" + Number(previewTile.tile.colspan || 1) + " × " + Number(previewTile.tile.rowspan || 1)
+                      color: root.previewForeground(previewTile.widgetId, previewTile.surfaceColor)
+                      font.family: Style.font.family
+                      font.pixelSize: Style.font.bodySmall
+                      font.bold: true
+                      horizontalAlignment: Text.AlignHCenter
+                    }
 
-                    delegate: MouseArea {
-                      id: resizeHandle
-                      required property var modelData
-                      readonly property string direction: String(modelData)
-                      readonly property bool north: direction.indexOf("n") !== -1
-                      readonly property bool south: direction.indexOf("s") !== -1
-                      readonly property bool east: direction.indexOf("e") !== -1
-                      readonly property bool west: direction.indexOf("w") !== -1
-                      readonly property bool corner: (north || south) && (east || west)
-
-                      z: 20
-                      width: corner ? 28 : ((north || south) ? Math.max(18, previewTile.width - 36) : 18)
-                      height: corner ? 28 : ((east || west) ? Math.max(18, previewTile.height - 36) : 18)
-                      x: west ? -7 : (east ? previewTile.width - width + 7 : 18)
-                      y: north ? -7 : (south ? previewTile.height - height + 7 : 18)
+                    MouseArea {
+                      id: dragArea
+                      z: 5
+                      anchors.fill: parent
                       hoverEnabled: true
-                      preventStealing: true
-                      cursorShape: direction === "n" || direction === "s"
-                        ? Qt.SizeVerCursor
-                        : (direction === "e" || direction === "w"
-                          ? Qt.SizeHorCursor
-                          : (direction === "ne" || direction === "sw"
-                            ? Qt.SizeBDiagCursor
-                            : Qt.SizeFDiagCursor))
-
-                      onPressed: function(mouse) {
-                        var point = resizeHandle.mapToItem(layoutPreview, mouse.x, mouse.y)
-                        root.beginResize(previewTile.index, resizeHandle.direction, point.x, point.y)
-                        mouse.accepted = true
-                      }
-                      onPositionChanged: function(mouse) {
-                        if (!pressed) return
-                        var point = resizeHandle.mapToItem(layoutPreview, mouse.x, mouse.y)
-                        root.updateResize(point.x, point.y)
-                      }
+                      cursorShape: Qt.SizeAllCursor
+                      drag.target: dragSurface
+                      drag.axis: Drag.XAndYAxis
+                      drag.minimumX: -previewTile.x
+                      drag.maximumX: layoutPreview.width - previewTile.x - dragSurface.width
+                      drag.minimumY: -previewTile.y
+                      drag.maximumY: layoutPreview.height - previewTile.y - dragSurface.height
+                      drag.smoothed: false
                       onReleased: function(mouse) {
-                        var point = resizeHandle.mapToItem(layoutPreview, mouse.x, mouse.y)
-                        root.updateResize(point.x, point.y)
-                        root.finishResize()
+                        var columnStep = layoutPreview.cellWidth + layoutPreview.gap
+                        var rowStep = layoutPreview.cellHeight + layoutPreview.gap
+                        var point = dragArea.mapToItem(layoutPreview, mouse.x, mouse.y)
+                        var col = Math.round((previewTile.x + dragSurface.x) / columnStep)
+                        var row = Math.round((previewTile.y + dragSurface.y) / rowStep)
+                        var pointerCol = Math.max(0, Math.min(root.gridColumns - 1, Math.floor(point.x / columnStep)))
+                        var pointerRow = Math.max(0, Math.min(root.gridRows - 1, Math.floor(point.y / rowStep)))
+                        dragSurface.x = 0
+                        dragSurface.y = 0
+                        root.dropTile(previewTile.index, col, row, pointerCol, pointerRow)
                       }
-                      onCanceled: root.cancelResize()
+                      onCanceled: {
+                        dragSurface.x = 0
+                        dragSurface.y = 0
+                      }
+                    }
 
-                      Item {
-                        anchors.fill: parent
-                        visible: resizeHandle.direction === "nw" || resizeHandle.direction === "se"
+                    // CanvasTTY owns resize from every edge and corner. Only
+                    // north-west and south-east draw a cue; all eight targets
+                    // keep generous hit areas and the appropriate cursor.
+                    Repeater {
+                      model: ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 
-                        Rectangle {
-                          width: 16
-                          height: 3
-                          radius: 2
-                          color: Color.popups.text
-                          x: resizeHandle.direction === "nw" ? 7 : parent.width - width - 7
-                          y: resizeHandle.direction === "nw" ? 7 : parent.height - height - 7
+                      delegate: MouseArea {
+                        id: resizeHandle
+                        required property var modelData
+                        readonly property string direction: String(modelData)
+                        readonly property bool north: direction.indexOf("n") !== -1
+                        readonly property bool south: direction.indexOf("s") !== -1
+                        readonly property bool east: direction.indexOf("e") !== -1
+                        readonly property bool west: direction.indexOf("w") !== -1
+                        readonly property bool corner: (north || south) && (east || west)
+
+                        z: 20
+                        width: corner ? 28 : ((north || south) ? Math.max(18, previewTile.width - 36) : 18)
+                        height: corner ? 28 : ((east || west) ? Math.max(18, previewTile.height - 36) : 18)
+                        x: west ? -7 : (east ? previewTile.width - width + 7 : 18)
+                        y: north ? -7 : (south ? previewTile.height - height + 7 : 18)
+                        hoverEnabled: true
+                        preventStealing: true
+                        cursorShape: direction === "n" || direction === "s"
+                          ? Qt.SizeVerCursor
+                          : (direction === "e" || direction === "w"
+                            ? Qt.SizeHorCursor
+                            : (direction === "ne" || direction === "sw"
+                              ? Qt.SizeBDiagCursor
+                              : Qt.SizeFDiagCursor))
+
+                        onPressed: function(mouse) {
+                          var point = resizeHandle.mapToItem(layoutPreview, mouse.x, mouse.y)
+                          root.beginResize(previewTile.index, resizeHandle.direction, point.x, point.y)
+                          mouse.accepted = true
                         }
+                        onPositionChanged: function(mouse) {
+                          if (!pressed) return
+                          var point = resizeHandle.mapToItem(layoutPreview, mouse.x, mouse.y)
+                          root.updateResize(point.x, point.y)
+                        }
+                        onReleased: function(mouse) {
+                          var point = resizeHandle.mapToItem(layoutPreview, mouse.x, mouse.y)
+                          root.updateResize(point.x, point.y)
+                          root.finishResize()
+                        }
+                        onCanceled: root.cancelResize()
 
-                        Rectangle {
-                          width: 3
-                          height: 16
-                          radius: 2
-                          color: Color.popups.text
-                          x: resizeHandle.direction === "nw" ? 7 : parent.width - width - 7
-                          y: resizeHandle.direction === "nw" ? 7 : parent.height - height - 7
+                        Item {
+                          anchors.fill: parent
+                          visible: resizeHandle.direction === "nw" || resizeHandle.direction === "se"
+
+                          Rectangle {
+                            width: 16
+                            height: 3
+                            radius: 2
+                            color: Color.popups.text
+                            x: resizeHandle.direction === "nw" ? 7 : parent.width - width - 7
+                            y: resizeHandle.direction === "nw" ? 7 : parent.height - height - 7
+                          }
+
+                          Rectangle {
+                            width: 3
+                            height: 16
+                            radius: 2
+                            color: Color.popups.text
+                            x: resizeHandle.direction === "nw" ? 7 : parent.width - width - 7
+                            y: resizeHandle.direction === "nw" ? 7 : parent.height - height - 7
+                          }
                         }
                       }
                     }
