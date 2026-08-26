@@ -294,7 +294,7 @@ Item {
       anchors.centerIn: parent
       radius: root.cfg.card ? root.cfg.card.radius : 18
       color: root.cardBg
-      borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, 1)
+      borderSpec: Border.none()
       visible: root.cfg.card ? root.cfg.card.visible !== false : true
 
       Item {
