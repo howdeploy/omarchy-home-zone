@@ -230,32 +230,22 @@ Item {
     root.resizeCandidateValid = true
   }
 
-  function placementOverlapArea(left, right) {
-    var width = Math.max(0, Math.min(left.col + left.colspan, right.col + right.colspan)
-      - Math.max(left.col, right.col))
-    var height = Math.max(0, Math.min(left.row + left.rowspan, right.row + right.rowspan)
-      - Math.max(left.row, right.row))
-    return width * height
+  function placementContainsPoint(tile, pointerX, pointerY) {
+    var colspan = Number(tile.colspan || 1)
+    var rowspan = Number(tile.rowspan || 1)
+    var left = Number(tile.col || 0) * (layoutPreview.cellWidth + layoutPreview.gap)
+    var top = Number(tile.row || 0) * (layoutPreview.cellHeight + layoutPreview.gap)
+    var width = colspan * layoutPreview.cellWidth + (colspan - 1) * layoutPreview.gap
+    var height = rowspan * layoutPreview.cellHeight + (rowspan - 1) * layoutPreview.gap
+    return pointerX >= left && pointerX < left + width
+      && pointerY >= top && pointerY < top + height
   }
 
-  function placementContainsCell(tile, col, row) {
-    return col >= tile.col && col < tile.col + tile.colspan
-      && row >= tile.row && row < tile.row + tile.rowspan
-  }
-
-  function collisionTargetIndex(index, candidate, pointerCol, pointerRow, tiles) {
-    var bestIndex = -1
-    var bestArea = 0
+  function releaseTargetIndex(index, pointerX, pointerY, tiles) {
     for (var i = 0; i < tiles.length; i++) {
-      if (i === index || !root.placementsOverlap(candidate, tiles[i])) continue
-      if (root.placementContainsCell(tiles[i], pointerCol, pointerRow)) return i
-      var area = root.placementOverlapArea(candidate, tiles[i])
-      if (area > bestArea) {
-        bestArea = area
-        bestIndex = i
-      }
+      if (i !== index && root.placementContainsPoint(tiles[i], pointerX, pointerY)) return i
     }
-    return bestIndex
+    return -1
   }
 
   function tileInSlot(tile, slot) {
@@ -267,18 +257,32 @@ Item {
     return next
   }
 
-  // A free drop keeps the tile's size. Dropping onto another tile exchanges
-  // their complete slots, so both position and size change atomically and the
-  // fixed 10x4 layout can never contain an overlap.
-  function dropTile(index, targetCol, targetRow, pointerCol, pointerRow) {
+  // The tile under the release pointer owns the drop. Resolve it before the
+  // snapped top-left: the grab offset can leave that snapped slot valid even
+  // after the pointer has already crossed onto a neighbouring tile.
+  function dropTile(index, targetCol, targetRow, pointerX, pointerY) {
     var current = root.clone(root.draftTiles)
     if (index < 0 || index >= current.length) return
     var moved = root.clone(current[index])
     var requestedRow = Math.max(0, Math.min(root.gridRows - moved.rowspan, Math.round(targetRow)))
     var requestedCol = Math.max(0, Math.min(root.gridColumns - moved.colspan, Math.round(targetCol)))
 
-    // Once resizing has created free cells, a normal non-overlapping move is
-    // preferable to repacking a whole band.
+    var targetIndex = root.releaseTargetIndex(index, pointerX, pointerY, current)
+    if (targetIndex >= 0) {
+      var target = root.clone(current[targetIndex])
+      current[index] = root.tileInSlot(moved, target)
+      current[targetIndex] = root.tileInSlot(target, moved)
+      if (!root.layoutValid(current)) {
+        root.feedback = "That swap does not fit the fixed Home Zone."
+        return
+      }
+      root.feedback = ""
+      root.draftTiles = current
+      return
+    }
+
+    // With no tile under the pointer, keep the tile's size and accept only a
+    // normal non-overlapping move into free grid cells.
     var direct = root.clone(moved)
     direct.col = requestedCol
     direct.row = requestedRow
@@ -289,21 +293,7 @@ Item {
       return
     }
 
-    var targetIndex = root.collisionTargetIndex(index, direct, pointerCol, pointerRow, current)
-    if (targetIndex < 0) {
-      root.feedback = "Drop onto a tile to swap, or choose an empty grid position."
-      return
-    }
-
-    var target = root.clone(current[targetIndex])
-    current[index] = root.tileInSlot(moved, target)
-    current[targetIndex] = root.tileInSlot(target, moved)
-    if (!root.layoutValid(current)) {
-      root.feedback = "That swap does not fit the fixed Home Zone."
-      return
-    }
-    root.feedback = ""
-    root.draftTiles = current
+    root.feedback = "Drop onto a tile to swap, or choose an empty grid position."
   }
 
   function resetLayout() {
@@ -787,11 +777,9 @@ Item {
                         var point = dragArea.mapToItem(layoutPreview, mouse.x, mouse.y)
                         var col = Math.round((previewTile.x + dragSurface.x) / columnStep)
                         var row = Math.round((previewTile.y + dragSurface.y) / rowStep)
-                        var pointerCol = Math.max(0, Math.min(root.gridColumns - 1, Math.floor(point.x / columnStep)))
-                        var pointerRow = Math.max(0, Math.min(root.gridRows - 1, Math.floor(point.y / rowStep)))
                         dragSurface.x = 0
                         dragSurface.y = 0
-                        root.dropTile(previewTile.index, col, row, pointerCol, pointerRow)
+                        root.dropTile(previewTile.index, col, row, point.x, point.y)
                       }
                       onCanceled: {
                         dragSurface.x = 0
