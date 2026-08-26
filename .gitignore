@@ -1,0 +1,10 @@
+# qmllint cache
+*.qmlc
+.qmlcache/
+
+# editor / os
+.DS_Store
+*.swp
+
+# dev-helper backups
+*.bak

@@ -11,8 +11,9 @@
 Item {
   property var shell: null          // контекст omarchy-shell
   property var appLibrary: null     // база приложений (для лаунчера)
+  property var homeZone: null       // контроллер Home Zone (только системным плиткам)
   property var tileConfig: ({})     // settings плитки из конфига
-  property var tileColors: ({})     // { background, text } — разрешённые цвета
+  property var tileColors: ({})     // background/text/border/launcherTile/accent/urgent
 }
 ```
 

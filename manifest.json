@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "howdeploy.home-zone",
+  "id": "io.github.howdeploy.home-zone",
   "name": "Home Zone",
-  "version": "0.1.0",
+  "version": "0.3.2",
   "author": "howdeploy",
-  "description": "Desktop widgets on top of the wallpaper: clock, app launcher, settings. Grid layout, theme-aware, agent-extensible.",
+  "license": "MIT",
+  "description": "Theme-aware desktop Home Zone with a clock, curated app launcher, Omarchy menu and editable tile layout.",
   "kinds": [
     "panel"
   ],

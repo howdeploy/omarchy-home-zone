@@ -1,31 +1,32 @@
 import QtQuick
 import qs.Commons
 
-// Обязательная recovery-плитка: открывает настройки только этой Home Zone.
+// Отдельная кнопка системного меню Omarchy. Она намеренно не совмещена с
+// Home Zone Settings: у двух действий разные владельцы и разные окна.
 Item {
   id: root
   anchors.fill: parent
 
   property var shell: null
   property var appLibrary: null
-  property var homeZone: null
   property var tileConfig: ({})
   property var tileColors: ({})
 
-  readonly property string label: String(tileConfig.label || "Настройки")
+  readonly property string label: String(tileConfig.label || "Menu")
   readonly property bool showLabel: tileConfig.showLabel === true
-  readonly property color textColor: root.tileColors.text || Color.bar.text
+  readonly property color textColor: root.tileColors.text || Color.foreground
 
   function activate() {
-    if (root.homeZone && typeof root.homeZone.openSettings === "function")
-      root.homeZone.openSettings()
+    if (root.shell && typeof root.shell.summon === "function") {
+      if (root.shell.summon("omarchy.menu", '{"menu":"root"}')) return
+    }
+    Util.execDetached("omarchy-shell shell summon omarchy.menu '{}'")
   }
 
   Rectangle {
-    id: hoverBg
     anchors.fill: parent
     radius: 20
-    color: settingsMouse.containsMouse ? Util.alpha(root.textColor, 0.08) : "transparent"
+    color: menuMouse.containsMouse ? Util.alpha(root.textColor, 0.08) : "transparent"
 
     Behavior on color { ColorAnimation { duration: 120 } }
   }
@@ -36,9 +37,9 @@ Item {
 
     Text {
       anchors.horizontalCenter: parent.horizontalCenter
-      text: "\uf013" // nf-fa-gear
+      text: "\ue900" // Omarchy launcher glyph, same as the upstream bar button
       color: root.textColor
-      font.family: "JetBrainsMono Nerd Font"
+      font.family: "omarchy"
       font.pixelSize: 48
     }
 
@@ -54,9 +55,10 @@ Item {
   }
 
   MouseArea {
-    id: settingsMouse
+    id: menuMouse
     anchors.fill: parent
     hoverEnabled: true
+    cursorShape: Qt.PointingHandCursor
     onClicked: root.activate()
   }
 }

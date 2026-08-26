@@ -1,9 +1,9 @@
 {
   "grid": {
-    "columns": 4,
-    "cellWidth": 120,
-    "cellHeight": 120,
-    "gap": 10
+    "columns": 10,
+    "cellWidth": 68,
+    "cellHeight": 68,
+    "gap": 14
   },
   "card": {
     "visible": true,
@@ -17,25 +17,48 @@
       "widget": "clock",
       "col": 0,
       "row": 0,
-      "colspan": 2,
-      "rowspan": 1,
-      "settings": { "format": "HH:mm", "dateFormat": "dddd d MMMM" }
-    },
-    {
-      "widget": "settings",
-      "col": 0,
-      "row": 1,
-      "colspan": 2,
-      "rowspan": 1,
-      "settings": { "action": "omarchy-shell shell summon omarchy.menu '{}'", "label": "Настройки" }
+      "colspan": 10,
+      "rowspan": 2,
+      "settings": {
+        "format": "HH:mm",
+        "fontFamily": "JetBrainsMono Nerd Font",
+        "timeSize": 118,
+        "letterSpacing": -9,
+        "showDate": false
+      }
     },
     {
       "widget": "launcher",
-      "col": 2,
-      "row": 0,
+      "col": 0,
+      "row": 2,
+      "colspan": 6,
+      "rowspan": 2,
+      "settings": {
+        "maxApps": 4,
+        "columns": 4
+      }
+    },
+    {
+      "widget": "menu",
+      "col": 6,
+      "row": 2,
       "colspan": 2,
       "rowspan": 2,
-      "settings": { "maxApps": 8, "columns": 2 }
+      "settings": {
+        "label": "Menu",
+        "showLabel": false
+      }
+    },
+    {
+      "widget": "settings",
+      "col": 8,
+      "row": 2,
+      "colspan": 2,
+      "rowspan": 2,
+      "settings": {
+        "label": "Settings",
+        "showLabel": false
+      }
     }
   ]
 }

@@ -1,23 +1,78 @@
 #!/usr/bin/env bash
-# Установка плагина Home Zone в omarchy-shell.
-# Копирует код в ~/.config/omarchy/plugins/<id>/, создаёт пользовательский
-# конфиг (если нет) и включает плагин.
+# ⚠️ DEV-HELPER, а не официальный установщик.
+#
+# Официальная установка плагина из GitHub:
+#     omarchy plugin add https://github.com/howdeploy/omarchy-home-zone.git --enable
+# Официальный установщик install.sh НЕ запускает — он клонирует репозиторий,
+# валидирует манифест и кладёт код в ~/.config/omarchy/plugins/<id>/.
+#
+# Этот скрипт синхронизирует РАБОЧЕЕ ДЕРЕВО репозитория в установочный каталог
+# для быстрой итерации при разработке. Отличия от официального пути:
+#   - копирует файлы (каталог плагина НЕ становится git-чекаутом);
+#   - перед заменой делает бэкап предыдущей установки;
+#   - отказывается работать, если плагин установлен через omarchy plugin add
+#     (там свой git-чекаут — обновляй через `omarchy plugin update <id>`).
 set -euo pipefail
 
-PLUGIN_ID="howdeploy.home-zone"
+PLUGINS_ROOT="${HOME}/.config/omarchy/plugins"
 SRC="$(cd "$(dirname "$0")" && pwd)"
-DEST="${HOME}/.config/omarchy/plugins/${PLUGIN_ID}"
+
+# ID — единственный источник правды: manifest.json
+PLUGIN_ID="$(jq -r '.id // empty' "${SRC}/manifest.json")"
+if [[ -z "${PLUGIN_ID}" ]]; then
+  echo "✗ Не удалось прочитать id из manifest.json" >&2
+  exit 1
+fi
+# Guard от path traversal / мусора в id (dev-only, но дёшево)
+if [[ ! "${PLUGIN_ID}" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+  echo "✗ Некорректный id плагина: ${PLUGIN_ID}" >&2
+  exit 1
+fi
+
+DEST="${PLUGINS_ROOT}/${PLUGIN_ID}"
+# Guard: DEST обязан лежать внутри каталога плагинов
+case "${DEST}" in
+  "${PLUGINS_ROOT}"/*) ;;
+  *) echo "✗ Путь установки вне ${PLUGINS_ROOT}: ${DEST}" >&2; exit 1 ;;
+esac
+
+if [[ -d "${DEST}/.git" ]]; then
+  echo "✗ ${DEST} — git-чекаут (установлен через 'omarchy plugin add')." >&2
+  echo "  Для обновления используй: omarchy plugin update ${PLUGIN_ID}" >&2
+  exit 1
+fi
+
 CONFIG_DEST="${HOME}/.config/omarchy/home-zone.json"
 SHELL_JSON="${HOME}/.config/omarchy/shell.json"
 
-echo "→ Копирую плагин в ${DEST}"
-mkdir -p "$(dirname "${DEST}")"
-rm -rf "${DEST}"
-mkdir -p "${DEST}"
-cp "${SRC}/manifest.json" "${SRC}/HomeZone.qml" "${DEST}/"
-cp -r "${SRC}/widgets" "${DEST}/"
+# Полезная нагрузка плагина. Новые корневые .qml добавляй сюда; widgets/ копируется целиком.
+PAYLOAD=(
+  "${SRC}/manifest.json"
+  "${SRC}/HomeZone.qml"
+  "${SRC}/SettingsOverlay.qml"
+  "${SRC}/widgets"
+)
 
-if [ ! -f "${CONFIG_DEST}" ]; then
+echo "→ Синхронизирую плагин ${PLUGIN_ID} в ${DEST}"
+mkdir -p "${PLUGINS_ROOT}"
+
+if [[ -d "${DEST}" ]]; then
+  # Бэкап предыдущей установки (без rm -rf: каталог не теряется)
+  rm -rf "${DEST}.bak" 2>/dev/null || true
+  mv "${DEST}" "${DEST}.bak"
+  echo "  (предыдущая установка сохранена в ${DEST}.bak)"
+fi
+mkdir -p "${DEST}"
+
+for item in "${PAYLOAD[@]}"; do
+  if [[ -e "${item}" ]]; then
+    cp -r "${item}" "${DEST}/"
+  else
+    echo "  (пропущен отсутствующий файл: ${item})"
+  fi
+done
+
+if [[ ! -f "${CONFIG_DEST}" ]]; then
   echo "→ Создаю пользовательский конфиг ${CONFIG_DEST}"
   mkdir -p "$(dirname "${CONFIG_DEST}")"
   cp "${SRC}/config/home-zone.json" "${CONFIG_DEST}"

@@ -35,9 +35,31 @@ manifest.json  →  kinds: ["panel"], keepLoaded: true, entryPoints.panel = Home
 
 ## Тема
 
-Цвета по умолчанию берутся из темы omarchy (`qs.Commons` → `Color.*`,
-`Style.*`): карточка = `Color.background`, плитки = `Color.bar.background`,
-текст = `Color.bar.text`. Оверрайды — `colors.*` в конфиге.
+Цвета по умолчанию берутся из живых ролей темы Omarchy (`qs.Commons` →
+`Color.*`, `Style.*`). CanvasTTY-композиция отображается системной палитрой:
+clock = `Color.accent`, launcher = `Color.bar.*`, menu = `Color.muted`,
+settings = `Color.urgent`, карточка = `Color.background`. Оверрайды — только
+необязательный слой `colors.*` в конфиге.
+
+## Настройки
+
+`SettingsOverlay.qml` — отдельное overlay-окно на `WlrLayer.Overlay`.
+Переключатели launcher применяют набор приложений сразу. Геометрия `tiles[]`
+остаётся черновиком до Save: окно позволяет переносить плитки и менять размер
+за любую из восьми граней/углов, проверяет границы и пересечения, а затем
+атомарно пишет конфиг через `FileView.setText()`. Cancel отбрасывает только
+черновик раскладки. Фиксированная сетка `10 × 4` не редактируется; при переносе
+между заполненными рядами их содержимое меняется местами, внутри ряда плитки
+перепаковываются без пересечений.
+
+Сетка `10 × 4` использует cell `68 × 68` и gap `14`: каждые две новые ячейки
+с промежутком точно равны старой ячейке `150 px`. Legacy-раскладка `5 × 2`
+мигрирует удвоением координат/spans, поэтому внешний размер и геометрия по
+пикселям не меняются.
+
+Настройки launcher пересекают динамический `Loader` как JSON-строка: так QML
+не превращает вложенный `appIds` в неоднозначный QVariant. Отсутствующий ключ
+выбирает дефолтные четыре приложения, а явный `[]` сохраняет `0/4`.
 
 ## Жизненный цикл виджета
 
@@ -50,9 +72,12 @@ manifest.json  →  kinds: ["panel"], keepLoaded: true, entryPoints.panel = Home
 ## Потоки данных
 
 - **Лаунчер**: `shell.appLibrary` (AppLibrary — база .desktop-записей, та же,
-  что у меню omarchy). `sortedEntries("")`, `iconSource(icon)`,
-  `entryName(entry)`, `launch(desktopId, name)`.
-- **Настройки**: команда из `tileConfig.action` через `Process` (Quickshell.Io).
+  что у меню Omarchy). Настройки сохраняют до четырёх ID в
+  `tileConfig.appIds`; виджет разрешает их обратно в записи и запускает через
+  `launch(desktopId, name)`.
+- **Menu**: прямой `shell.summon("omarchy.menu", ...)` с CLI-fallback.
+- **Settings**: прямой вызов `HomeZone.openSettings()`, без произвольной
+  shell-команды из конфига.
 - **Часы**: `Qt.formatTime/formatDate` + таймер 1с.
 
 ## Безопасность
