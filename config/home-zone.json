@@ -1,0 +1,41 @@
+{
+  "grid": {
+    "columns": 5,
+    "cellWidth": 150,
+    "cellHeight": 120,
+    "gap": 12
+  },
+  "card": {
+    "visible": true,
+    "backgroundAlpha": 0.75,
+    "radius": 18,
+    "padding": 18
+  },
+  "colors": {},
+  "tiles": [
+    {
+      "widget": "clock",
+      "col": 0,
+      "row": 0,
+      "colspan": 2,
+      "rowspan": 1,
+      "settings": { "format": "HH:mm", "dateFormat": "dddd d MMMM" }
+    },
+    {
+      "widget": "launcher",
+      "col": 2,
+      "row": 0,
+      "colspan": 3,
+      "rowspan": 2,
+      "settings": { "maxApps": 12, "columns": 3 }
+    },
+    {
+      "widget": "settings",
+      "col": 0,
+      "row": 1,
+      "colspan": 2,
+      "rowspan": 1,
+      "settings": { "action": "omarchy-shell shell summon omarchy.menu '{}'", "label": "Настройки" }
+    }
+  ]
+}

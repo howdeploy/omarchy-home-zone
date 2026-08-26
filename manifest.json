@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "howdeploy.home-zone",
+  "name": "Home Zone",
+  "version": "0.1.0",
+  "author": "howdeploy",
+  "description": "Desktop widgets on top of the wallpaper: clock, app launcher, settings. Grid layout, theme-aware, agent-extensible.",
+  "kinds": [
+    "panel"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "panel": "HomeZone.qml"
+  }
+}
