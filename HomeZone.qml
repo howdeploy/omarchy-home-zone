@@ -97,12 +97,13 @@ Item {
     stageHeight = gridHeight()
   }
 
-  // Горячая перезагрузка конфига
+  // Горячая перезагрузка конфига (паттерн из Color.qml userShellFile)
   FileView {
     id: configFile
     path: root.configPath
     watchChanges: true
     printErrors: false
+    onFileChanged: reload()
     onLoaded: root.loadConfig(text())
     onLoadFailed: root.loadConfig("")
   }
