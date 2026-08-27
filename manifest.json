@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.howdeploy.home-zone",
   "name": "Home Zone",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "howdeploy",
   "license": "MIT",
   "description": "Theme-aware desktop Home Zone with a clock, curated app launcher, Omarchy menu and editable tile layout.",

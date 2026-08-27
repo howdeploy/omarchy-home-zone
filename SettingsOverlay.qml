@@ -15,6 +15,7 @@ Item {
 
   property var appLibrary: null
   property var defaultTiles: []
+  property bool persistenceReady: false
   property bool opened: false
   property var draftConfig: ({})
   property var draftTiles: []
@@ -34,7 +35,7 @@ Item {
   readonly property int gridRows: 4
 
   signal launcherAppsChanged(var appIds)
-  signal saveRequested(var nextConfig)
+  signal saveRequested(var nextTiles)
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value === undefined ? null : value))
@@ -113,6 +114,10 @@ Item {
   }
 
   function toggleApp(id) {
+    if (!root.persistenceReady) {
+      root.feedback = "Configuration is reloading. Try again in a moment."
+      return
+    }
     var value = String(id)
     var next = root.selectedAppIds.slice()
     var index = next.indexOf(value)
@@ -301,29 +306,16 @@ Item {
     root.feedback = ""
   }
 
-  function buildConfig() {
-    var next = root.clone(root.draftConfig)
-    var tiles = root.clone(root.draftTiles)
-    var launcherIndex = root.launcherTileIndex(tiles)
-    if (launcherIndex >= 0) {
-      var launcher = root.clone(tiles[launcherIndex])
-      var settings = root.clone(launcher.settings || ({}))
-      settings.maxApps = root.maxSelectedApps
-      settings.columns = root.maxSelectedApps
-      settings.appIds = root.selectedAppIds.slice()
-      launcher.settings = settings
-      tiles[launcherIndex] = launcher
-    }
-    next.tiles = tiles
-    return next
-  }
-
   function save() {
+    if (!root.persistenceReady) {
+      root.feedback = "Configuration is reloading. Try Save again."
+      return
+    }
     if (!root.layoutValid(root.draftTiles)) {
       root.feedback = "Fix the tile layout before saving."
       return
     }
-    root.saveRequested(root.buildConfig())
+    root.saveRequested(root.clone(root.draftTiles))
   }
 
   function previewSurface(widget) {
@@ -476,7 +468,7 @@ Item {
             accent: Color.accent
             selected: true
             focusable: true
-            enabled: root.layoutValid(root.draftTiles)
+            enabled: root.persistenceReady && root.layoutValid(root.draftTiles)
             opacity: enabled ? 1 : 0.45
             onClicked: root.save()
           }
@@ -632,8 +624,9 @@ Item {
                     MouseArea {
                       id: appMouse
                       anchors.fill: parent
+                      enabled: root.persistenceReady
                       hoverEnabled: true
-                      cursorShape: Qt.PointingHandCursor
+                      cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                       onClicked: root.toggleApp(appRow.modelData.id)
                     }
                   }

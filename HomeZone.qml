@@ -42,8 +42,16 @@ Item {
     ]
   })
 
+  // Defaults keep the panel drawable while FileView resolves the user config,
+  // but they are never writable state until the load has completed.
   property var cfg: defaultCfg
-  property var tiles: []
+  property var tiles: defaultCfg.tiles
+  property bool configReady: false
+  property bool configWriteBlocked: true
+  property bool settingsOpenPending: false
+  property int configLoadFailures: 0
+  property int lastConfigLoadError: 0
+  readonly property int configLoadRetryLimit: 5
 
   // Omarchy owns the palette. Each CanvasTTY-style surface maps to a live
   // system role; colors.* remains an optional user override layer.
@@ -133,6 +141,10 @@ Item {
     return out
   }
 
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value === undefined ? null : value))
+  }
+
   function migrateLegacyGrid(config) {
     var grid = config && config.grid ? config.grid : ({})
     if (Number(grid.columns) !== 5
@@ -157,10 +169,8 @@ Item {
     return config
   }
 
-  function loadConfig(raw) {
-    var user = {}
-    try { user = JSON.parse(raw || "{}") } catch (e) { console.warn("home-zone: конфиг не распарсился:", String(e)) }
-    cfg = migrateLegacyGrid(mergeDeep(defaultCfg, user))
+  function applyConfig(user) {
+    cfg = migrateLegacyGrid(mergeDeep(defaultCfg, user || ({})))
     tiles = Array.isArray(cfg.tiles) ? cfg.tiles : []
     columns = cfg.grid ? cfg.grid.columns : 10
     cellW = cfg.grid ? cfg.grid.cellWidth : 68
@@ -170,14 +180,79 @@ Item {
     stageHeight = gridHeight()
   }
 
+  function loadConfig(raw) {
+    var user
+    try {
+      user = JSON.parse(String(raw === undefined || raw === null ? "" : raw))
+      if (!user || typeof user !== "object" || Array.isArray(user))
+        throw new Error("top-level config must be an object")
+    } catch (e) {
+      console.warn("home-zone: config parse failed, keeping the last known config:", String(e))
+      return false
+    }
+    root.applyConfig(user)
+    return true
+  }
+
+  function openPendingSettings() {
+    if (!root.settingsOpenPending || !root.configReady || root.configWriteBlocked) return
+    root.settingsOpenPending = false
+    Qt.callLater(function() {
+      if (root.configReady && !root.configWriteBlocked)
+        settingsOverlay.openForConfig(root.cfg)
+    })
+  }
+
+  function handleConfigLoaded(raw) {
+    if (!root.loadConfig(raw)) {
+      root.configWriteBlocked = true
+      root.configLoadFailures += 1
+      if (root.configLoadFailures < root.configLoadRetryLimit) configReloadTimer.restart()
+      return
+    }
+    root.configLoadFailures = 0
+    root.lastConfigLoadError = 0
+    root.configReady = true
+    root.configWriteBlocked = false
+    root.openPendingSettings()
+  }
+
+  function handleConfigLoadFailed(error) {
+    root.lastConfigLoadError = Number(error)
+    root.configWriteBlocked = true
+    root.configLoadFailures += 1
+    if (root.configLoadFailures < root.configLoadRetryLimit) {
+      configReloadTimer.restart()
+      return
+    }
+
+    // Error 2 is ENOENT. Only a fresh instance may adopt defaults after
+    // repeated confirmation that no user config exists. A running instance
+    // always keeps its last known good state instead of replacing it.
+    if (!root.configReady && root.lastConfigLoadError === 2) {
+      root.applyConfig({})
+      root.configReady = true
+      root.configWriteBlocked = false
+      root.openPendingSettings()
+      return
+    }
+    console.warn("home-zone: config load failed; writes remain blocked:", String(error))
+  }
+
   function persistConfig(nextConfig) {
+    if (!root.configReady || root.configWriteBlocked) {
+      console.warn("home-zone: refusing to write before the user config is ready")
+      return false
+    }
     var serialized = JSON.stringify(nextConfig, null, 2)
-    root.loadConfig(serialized)
+    if (!root.loadConfig(serialized)) return false
     configFile.setText(serialized + "\n")
+    return true
   }
 
   function persistLauncherApps(appIds) {
-    var next = JSON.parse(JSON.stringify(root.cfg || root.defaultCfg))
+    if (!root.configReady || root.configWriteBlocked) return false
+    var next = root.clone(root.cfg || root.defaultCfg)
     var values = Array.isArray(next.tiles) ? next.tiles : []
     for (var i = 0; i < values.length; i++) {
       if (String(values[i].widget || "") !== "launcher") continue
@@ -188,7 +263,37 @@ Item {
       launcher.settings.appIds = Array.isArray(appIds) ? appIds.slice(0, 4) : []
       break
     }
-    root.persistConfig(next)
+    return root.persistConfig(next)
+  }
+
+  // Layout Save owns geometry only. All settings are taken from the latest
+  // loaded config, so a stale overlay draft can never replace appIds or other
+  // settings that changed while the plugin was reloading.
+  function persistLayout(draftTiles) {
+    if (!root.configReady || root.configWriteBlocked || !Array.isArray(draftTiles)) return false
+    var next = root.clone(root.cfg || root.defaultCfg)
+    var currentTiles = Array.isArray(next.tiles) ? next.tiles : []
+    var usedDrafts = []
+
+    for (var i = 0; i < currentTiles.length; i++) {
+      var current = currentTiles[i]
+      var widget = String(current.widget || "")
+      var draft = null
+      for (var j = 0; j < draftTiles.length; j++) {
+        if (!usedDrafts[j] && String(draftTiles[j].widget || "") === widget) {
+          usedDrafts[j] = true
+          draft = draftTiles[j]
+          break
+        }
+      }
+      if (!draft) continue
+      current.col = Number(draft.col)
+      current.row = Number(draft.row)
+      current.colspan = Number(draft.colspan)
+      current.rowspan = Number(draft.rowspan)
+    }
+    next.tiles = currentTiles
+    return root.persistConfig(next)
   }
 
   function launcherSettings() {
@@ -209,6 +314,12 @@ Item {
   }
 
   function openSettings() {
+    if (!root.configReady || root.configWriteBlocked) {
+      root.settingsOpenPending = true
+      root.configLoadFailures = 0
+      configReloadTimer.restart()
+      return
+    }
     settingsOverlay.openForConfig(root.cfg)
   }
 
@@ -235,6 +346,12 @@ Item {
         ? root.launcherSettings().appIds
         : null,
       launcherRuntime: root.loadedWidgetDiagnostics("launcher"),
+      configState: {
+        ready: root.configReady,
+        writeBlocked: root.configWriteBlocked,
+        loadFailures: root.configLoadFailures,
+        lastLoadError: root.lastConfigLoadError
+      },
       tiles: root.tiles.map(function(tile) {
         return {
           widget: String(tile.widget || ""),
@@ -254,23 +371,34 @@ Item {
     watchChanges: true
     atomicWrites: true
     printErrors: false
-    onFileChanged: reload()
-    onLoaded: root.loadConfig(text())
-    onLoadFailed: root.loadConfig("")
+    onFileChanged: {
+      root.configWriteBlocked = true
+      root.configLoadFailures = 0
+      reload()
+    }
+    onLoaded: root.handleConfigLoaded(text())
+    onLoadFailed: function(error) { root.handleConfigLoadFailed(error) }
   }
 
-  Component.onCompleted: root.loadConfig("")
+  Timer {
+    id: configReloadTimer
+    interval: 150
+    repeat: false
+    onTriggered: configFile.reload()
+  }
 
   SettingsOverlay {
     id: settingsOverlay
     appLibrary: root.shell ? root.shell.appLibrary : null
     defaultTiles: root.defaultCfg.tiles
+    persistenceReady: root.configReady && !root.configWriteBlocked
     onLauncherAppsChanged: function(appIds) {
-      root.persistLauncherApps(appIds)
+      if (!root.persistLauncherApps(appIds))
+        settingsOverlay.feedback = "Configuration is reloading. Try again in a moment."
     }
-    onSaveRequested: function(nextConfig) {
-      root.persistConfig(nextConfig)
-      settingsOverlay.close()
+    onSaveRequested: function(nextTiles) {
+      if (root.persistLayout(nextTiles)) settingsOverlay.close()
+      else settingsOverlay.feedback = "Configuration is reloading. Try Save again."
     }
   }
 
