@@ -154,8 +154,8 @@ Item {
             width: Math.min(46, parent.width * 0.8)
             height: width
             source: appTile.iconUrl
-            sourceSize.width: Math.max(1, Math.round(width * 2))
-            sourceSize.height: sourceSize.width
+            sourceSize.width: Math.max(1, Math.round(appIcon.width * 2))
+            sourceSize.height: Math.max(1, Math.round(appIcon.height * 2))
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             visible: appTile.iconUrl !== ""
