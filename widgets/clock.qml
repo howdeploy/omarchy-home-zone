@@ -5,6 +5,7 @@ import qs.Commons
 Item {
   id: root
   anchors.fill: parent
+  clip: true
 
   property var shell: null
   property var appLibrary: null
@@ -32,28 +33,50 @@ Item {
     }
   }
 
-  Column {
-    anchors.centerIn: parent
-    spacing: 8
+  Item {
+    id: content
+    anchors.fill: parent
+    anchors.margins: Math.max(6, Math.min(root.width, root.height) * 0.06)
+    readonly property real dateGap: root.showDate ? Math.min(8, height * 0.04) : 0
 
     Text {
-      anchors.horizontalCenter: parent.horizontalCenter
+      id: timeLabel
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.top: parent.top
+      height: root.showDate
+        ? Math.max(0, parent.height - dateLabel.height - parent.dateGap)
+        : parent.height
       text: root.timeText
       color: root.tileColors.text || Color.bar.text
       font.family: root.fontFamily
       font.pixelSize: root.timeSize
       font.weight: Font.Black
       font.letterSpacing: root.tracking
+      fontSizeMode: Text.Fit
+      minimumPixelSize: Math.max(1, Math.min(12, root.timeSize))
+      wrapMode: Text.NoWrap
+      horizontalAlignment: Text.AlignHCenter
+      verticalAlignment: Text.AlignVCenter
     }
 
     Text {
+      id: dateLabel
       visible: root.showDate
-      anchors.horizontalCenter: parent.horizontalCenter
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      height: visible ? Math.min(root.dateSize * 1.6, parent.height * 0.25) : 0
       text: root.dateText
       color: Util.alpha(root.tileColors.text || Color.bar.text, 0.8)
       font.family: root.fontFamily
       font.pixelSize: root.dateSize
       font.weight: Font.Medium
+      fontSizeMode: Text.Fit
+      minimumPixelSize: Math.max(1, Math.min(9, root.dateSize))
+      wrapMode: Text.NoWrap
+      horizontalAlignment: Text.AlignHCenter
+      verticalAlignment: Text.AlignVCenter
     }
   }
 }

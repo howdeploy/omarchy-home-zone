@@ -6,6 +6,7 @@ import qs.Commons
 Item {
   id: root
   anchors.fill: parent
+  clip: true
 
   property var shell: null
   property var appLibrary: null
@@ -24,10 +25,31 @@ Item {
     ? parsedConfig.appIds.map(function(id) { return String(id) })
     : null
   property var apps: []
-  readonly property int columns: Math.max(1, Math.min(configuredColumns, root.apps.length || 1))
+  readonly property real gridSpacing: Math.max(4, Math.min(8, Math.min(width, height) * 0.04))
+  readonly property int columns: adaptiveColumnCount(root.apps.length, width, height)
   readonly property color textColor: root.tileColors.text || Color.bar.text
   readonly property color buttonColor: root.tileColors.launcherTile || Util.alpha(textColor, 0.10)
   readonly property int rowCount: Math.max(1, Math.ceil(root.apps.length / root.columns))
+
+  function adaptiveColumnCount(itemCount, availableWidth, availableHeight) {
+    var count = Math.max(1, Number(itemCount || 0))
+    var limit = Math.max(1, Math.min(root.configuredColumns, count))
+    if (availableWidth <= 0 || availableHeight <= 0) return limit
+
+    var bestColumns = 1
+    var bestCellExtent = -1
+    for (var candidate = 1; candidate <= limit; candidate++) {
+      var rows = Math.ceil(count / candidate)
+      var cellWidth = (availableWidth - (candidate - 1) * root.gridSpacing) / candidate
+      var cellHeight = (availableHeight - (rows - 1) * root.gridSpacing) / rows
+      var cellExtent = Math.min(cellWidth, cellHeight)
+      if (cellExtent > bestCellExtent) {
+        bestCellExtent = cellExtent
+        bestColumns = candidate
+      }
+    }
+    return bestColumns
+  }
 
   function loadTileConfig() {
     try {
@@ -94,7 +116,7 @@ Item {
     id: appGrid
     anchors.fill: parent
     columns: root.columns
-    spacing: 8
+    spacing: root.gridSpacing
 
     Repeater {
       model: root.apps
@@ -102,10 +124,12 @@ Item {
       delegate: Item {
         id: appTile
         required property var modelData
+        clip: true
         readonly property var entry: modelData.entry
         readonly property string appId: String(entry && entry.id || "")
         readonly property string appName: root.appLibrary ? String(root.appLibrary.entryName(entry) || "") : ""
         readonly property string iconUrl: root.appLibrary ? String(root.appLibrary.iconSource(String(entry && entry.icon || "")) || "") : ""
+        readonly property real contentExtent: Math.max(0, Math.min(58, width - 8, height - 8))
 
         width: (appGrid.width - (root.columns - 1) * appGrid.spacing) / root.columns
         height: (appGrid.height - (root.rowCount - 1) * appGrid.spacing) / root.rowCount
@@ -113,7 +137,7 @@ Item {
         Rectangle {
           id: hoverBg
           anchors.fill: parent
-          radius: 12
+          radius: Math.max(0, Math.min(12, width / 4, height / 4))
           color: appMouse.containsMouse ? Util.alpha(root.textColor, 0.16) : root.buttonColor
 
           Behavior on color { ColorAnimation { duration: 120 } }
@@ -121,17 +145,17 @@ Item {
 
         Item {
           anchors.centerIn: parent
-          width: 58
-          height: 58
+          width: appTile.contentExtent
+          height: appTile.contentExtent
 
           Image {
             id: appIcon
             anchors.centerIn: parent
-            width: 46
-            height: 46
+            width: Math.min(46, parent.width * 0.8)
+            height: width
             source: appTile.iconUrl
-            sourceSize.width: 92
-            sourceSize.height: 92
+            sourceSize.width: Math.max(1, Math.round(width * 2))
+            sourceSize.height: sourceSize.width
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             visible: appTile.iconUrl !== ""
@@ -143,8 +167,10 @@ Item {
             text: appTile.appName.length > 0 ? appTile.appName.charAt(0).toUpperCase() : "?"
             color: root.textColor
             font.family: "JetBrainsMono Nerd Font"
-            font.pixelSize: 34
+            font.pixelSize: Math.max(1, Math.min(34, parent.width * 0.6))
             font.weight: Font.Bold
+            fontSizeMode: Text.Fit
+            minimumPixelSize: 1
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
           }
