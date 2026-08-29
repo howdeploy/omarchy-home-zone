@@ -22,6 +22,7 @@ Item {
   property string draftSize: "default"
   property string draftPlacement: "center"
   property var selectedAppIds: []
+  property var selectedAppIdSet: ({})
   property var appRows: []
   property string searchText: ""
   property string feedback: ""
@@ -90,6 +91,16 @@ Item {
     return ids
   }
 
+  function setSelectedAppIds(ids) {
+    var values = Array.isArray(ids)
+      ? ids.slice(0, root.maxSelectedApps).map(function(id) { return String(id) })
+      : []
+    var idSet = ({})
+    for (var i = 0; i < values.length; i++) idSet[values[i]] = true
+    root.selectedAppIds = values
+    root.selectedAppIdSet = idSet
+  }
+
   function openForConfig(config) {
     root.draftConfig = root.clone(config || ({}))
     root.draftTiles = root.clone(Array.isArray(root.draftConfig.tiles) ? root.draftConfig.tiles : root.defaultTiles)
@@ -102,10 +113,11 @@ Item {
     var launcherSettings = launcherIndex >= 0 && root.draftTiles[launcherIndex].settings
       ? root.draftTiles[launcherIndex].settings
       : ({})
-    root.selectedAppIds = Object.prototype.hasOwnProperty.call(launcherSettings, "appIds")
+    var selectedIds = Object.prototype.hasOwnProperty.call(launcherSettings, "appIds")
       && Array.isArray(launcherSettings.appIds)
-      ? launcherSettings.appIds.slice(0, root.maxSelectedApps).map(function(id) { return String(id) })
+      ? launcherSettings.appIds
       : root.defaultAppIds()
+    root.setSelectedAppIds(selectedIds)
     root.searchText = ""
     root.feedback = ""
     root.cancelResize()
@@ -141,10 +153,6 @@ Item {
     root.appRows = next
   }
 
-  function isAppSelected(id) {
-    return root.selectedAppIds.indexOf(String(id)) !== -1
-  }
-
   function toggleApp(id) {
     if (!root.persistenceReady) {
       root.feedback = "Configuration is reloading. Try again in a moment."
@@ -163,8 +171,8 @@ Item {
       root.feedback = "Launcher holds up to " + root.maxSelectedApps + " applications."
       return
     }
-    root.selectedAppIds = next
-    root.launcherAppsChanged(next.slice())
+    root.setSelectedAppIds(next)
+    root.launcherAppsChanged(root.selectedAppIds.slice())
   }
 
   function placementsOverlap(left, right) {
@@ -646,7 +654,7 @@ Item {
                       anchors.right: parent.right
                       anchors.rightMargin: 6
                       anchors.verticalCenter: parent.verticalCenter
-                      checked: root.isAppSelected(appRow.modelData.id)
+                      checked: root.selectedAppIdSet[String(appRow.modelData.id)] === true
                       interactive: false
                       foreground: Color.popups.text
                       accent: Color.accent
