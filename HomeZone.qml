@@ -429,7 +429,17 @@ Item {
     onFileChanged: {
       root.configWriteBlocked = true
       root.configLoadFailures = 0
-      reload()
+      // FileView also emits fileChanged for setText(). Reloading from inside
+      // that signal races the asynchronous atomic write and can be dropped,
+      // leaving writes blocked until the settings panel is reopened.
+      configReloadTimer.restart()
+    }
+    onSaved: root.configWriteBlocked = false
+    onSaveFailed: function(error) {
+      console.warn("home-zone: config save failed; reloading the last persisted config:", String(error))
+      root.configWriteBlocked = true
+      root.configLoadFailures = 0
+      configReloadTimer.restart()
     }
     onLoaded: root.handleConfigLoaded(text())
     onLoadFailed: function(error) { root.handleConfigLoadFailed(error) }
