@@ -51,18 +51,19 @@ omarchy plugin remove io.github.howdeploy.home-zone
 
 ## Разработка
 
-`install.sh` — **dev-helper, официальный установщик его не запускает**. Он
-синхронизирует рабочее дерево репозитория в установочный каталог для быстрой
-итерации (бэкапит предыдущую установку, не трогает git-чекауты, установленные
-через `omarchy plugin add`):
+Клонируй репозиторий и запусти те же проверки без внешних зависимостей, которые используются перед релизом:
 
 ```bash
-./install.sh
+git clone https://github.com/howdeploy/omarchy-home-zone.git
+cd omarchy-home-zone
+npm test
+omarchy plugin validate .
+qmllint -I "$OMARCHY_PATH/shell" HomeZone.qml SettingsOverlay.qml widgets/*.qml
 ```
 
 ## Конфиг
 
-`~/.config/omarchy/home-zone.json` — перечитывается на лету (без рестарта):
+Home Zone безопасно опрашивает `~/.config/omarchy/home-zone.json` раз в две секунды и применяет внешние правки без рестарта shell:
 
 | Ключ | Что делает |
 |---|---|
@@ -82,8 +83,17 @@ omarchy plugin remove io.github.howdeploy.home-zone
 ## Зависимости
 
 - Omarchy с шеллом на quickshell (`omarchy-shell`);
-- плитка `menu` вызывает системное меню Omarchy через
-  `omarchy-shell shell summon omarchy.menu`.
+- Python 3 для небольшого helper-процесса на границе настроек;
+- плитка `menu` вызывает системное меню Omarchy через `omarchy-shell shell summon omarchy.menu`.
+
+## Безопасность и приватность
+
+Как и любой сторонний плагин Omarchy Shell, Home Zone работает без sandbox внутри долгоживущего процесса `omarchy-shell` с правами пользователя. Перед включением проверь исходники.
+
+- Плагин не обращается к сети и не содержит install hook, daemon, service, скомпилированных бинарников, действий с package manager или повышения привилегий.
+- Он читает и пишет только `~/.config/omarchy/home-zone.json` через короткоживущий Python-helper, CLI которого принимает операцию, но никогда не принимает путь.
+- Helper определяет home по effective UID, открывает каждый каталог без перехода по ссылкам и отклоняет небезопасного владельца или права, symlink, не-regular файлы, несколько hard link и настройки больше 64 KiB.
+- Запись атомарно публикуется относительно уже проверенного descriptor каталога с режимом `0600`; старый пользовательский конфиг `0644` автоматически ужесточается.
 
 ## Лицензия
 

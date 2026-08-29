@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
+import "HomeZoneMath.js" as HomeZoneMath
 
 // Home Zone — десктопные виджеты поверх обоев.
 //
@@ -21,8 +22,9 @@ Item {
   property var shell: null
   property var manifest: null
 
-  readonly property string home: Quickshell.env("HOME")
-  readonly property string configPath: home + "/.config/omarchy/home-zone.json"
+  readonly property string configHelperPath: manifest && manifest.__sourceDir
+    ? String(manifest.__sourceDir).replace(/\/$/, "") + "/helpers/home_zone_config.py"
+    : ""
 
   // ── Дефолтный конфиг (пользовательский ~/.config/omarchy/home-zone.json
   //    перекрывает; массив tiles заменяется целиком) ──
@@ -43,8 +45,8 @@ Item {
     ]
   })
 
-  // Defaults keep the panel drawable while FileView resolves the user config,
-  // but they are never writable state until the load has completed.
+  // Defaults keep the panel drawable while the confined helper resolves the
+  // user config, but they are never writable state until loading completes.
   property var cfg: defaultCfg
   property var tiles: defaultCfg.tiles
   property bool configReady: false
@@ -52,7 +54,15 @@ Item {
   property bool settingsOpenPending: false
   property int configLoadFailures: 0
   property int lastConfigLoadError: 0
-  readonly property int configLoadRetryLimit: 5
+  property bool configReadPending: false
+  property bool configWritePending: false
+  property string pendingConfigText: ""
+  property string activeConfigWriteText: ""
+  property string lastConfigText: ""
+
+  onConfigHelperPathChanged: {
+    if (configHelperPath !== "") Qt.callLater(root.requestConfigRead)
+  }
 
   // Omarchy owns the palette. Each CanvasTTY-style surface maps to a live
   // system role; colors.* remains an optional user override layer.
@@ -68,42 +78,30 @@ Item {
 
   readonly property real stageWidth: columns * cellW + (columns - 1) * gap
   property real stageHeight: gridHeight()
-  readonly property string displaySize: normalizeDisplaySize(
+  readonly property string displaySize: HomeZoneMath.normalizeDisplaySize(
     cfg.display ? cfg.display.size : "default")
-  readonly property string displayPlacement: normalizeDisplayPlacement(
+  readonly property string displayPlacement: HomeZoneMath.normalizeDisplayPlacement(
     cfg.display ? cfg.display.placement : "center")
-  readonly property real displayScale: scaleForDisplaySize(displaySize)
+  readonly property real displayScale: HomeZoneMath.scaleForDisplaySize(displaySize)
   readonly property real baseCardWidth: stageWidth + pad * 2
   readonly property real baseCardHeight: stageHeight + pad * 2
   readonly property real placementMargin: 48
 
   function normalizeDisplaySize(value) {
-    var size = String(value || "default")
-    return size === "small" || size === "mini" ? size : "default"
+    return HomeZoneMath.normalizeDisplaySize(value)
   }
 
   function normalizeDisplayPlacement(value) {
-    var placement = String(value || "center")
-    return placement === "top" || placement === "right"
-      || placement === "bottom" || placement === "left"
-      ? placement
-      : "center"
+    return HomeZoneMath.normalizeDisplayPlacement(value)
   }
 
   function scaleForDisplaySize(value) {
-    if (value === "small") return 0.8
-    if (value === "mini") return 0.6
-    return 1
+    return HomeZoneMath.scaleForDisplaySize(value)
   }
 
   function placementOffset(available, scaledSize, axis) {
-    var room = Math.max(0, available - scaledSize)
-    var edgeInset = Math.min(root.placementMargin, room / 2)
-    if ((axis === "x" && root.displayPlacement === "left")
-        || (axis === "y" && root.displayPlacement === "top")) return edgeInset
-    if ((axis === "x" && root.displayPlacement === "right")
-        || (axis === "y" && root.displayPlacement === "bottom")) return room - edgeInset
-    return room / 2
+    return HomeZoneMath.placementOffset(
+      available, scaledSize, axis, root.displayPlacement, root.placementMargin)
   }
 
   function colorOverride(keys, fallback) {
@@ -225,7 +223,8 @@ Item {
       if (!user || typeof user !== "object" || Array.isArray(user))
         throw new Error("top-level config must be an object")
     } catch (e) {
-      console.warn("home-zone: config parse failed, keeping the last known config:", String(e))
+      if (root.configLoadFailures === 0)
+        console.warn("home-zone: config parse failed, keeping the last known config:", String(e))
       return false
     }
     root.applyConfig(user)
@@ -242,12 +241,13 @@ Item {
   }
 
   function handleConfigLoaded(raw) {
-    if (!root.loadConfig(raw)) {
+    var text = String(raw === undefined || raw === null ? "" : raw)
+    if (!root.loadConfig(text)) {
       root.configWriteBlocked = true
       root.configLoadFailures += 1
-      if (root.configLoadFailures < root.configLoadRetryLimit) configReloadTimer.restart()
       return
     }
+    root.lastConfigText = text
     root.configLoadFailures = 0
     root.lastConfigLoadError = 0
     root.configReady = true
@@ -255,37 +255,77 @@ Item {
     root.openPendingSettings()
   }
 
-  function handleConfigLoadFailed(error) {
-    root.lastConfigLoadError = Number(error)
-    root.configWriteBlocked = true
-    root.configLoadFailures += 1
-    if (root.configLoadFailures < root.configLoadRetryLimit) {
-      configReloadTimer.restart()
-      return
-    }
+  function handleConfigMissing() {
+    root.lastConfigLoadError = 3
 
-    // Error 2 is ENOENT. Only a fresh instance may adopt defaults after
-    // repeated confirmation that no user config exists. A running instance
-    // always keeps its last known good state instead of replacing it.
-    if (!root.configReady && root.lastConfigLoadError === 2) {
-      root.applyConfig({})
+    if (!root.configReady || root.lastConfigText === "") {
+      if (!root.configReady) root.applyConfig({})
+      root.lastConfigText = ""
+      root.configLoadFailures = 0
       root.configReady = true
       root.configWriteBlocked = false
       root.openPendingSettings()
       return
     }
-    console.warn("home-zone: config load failed; writes remain blocked:", String(error))
+
+    root.restoreLastPersistedConfig()
+    root.configWriteBlocked = true
+    root.configLoadFailures += 1
+    if (root.configLoadFailures === 1)
+      console.warn("home-zone: config disappeared; keeping the last known state and blocking writes")
+  }
+
+  function handleConfigReadFailed(exitCode, detail) {
+    root.restoreLastPersistedConfig()
+    root.lastConfigLoadError = Number(exitCode)
+    root.configWriteBlocked = true
+    root.configLoadFailures += 1
+    if (root.configLoadFailures === 1)
+      console.warn("home-zone: secure config read failed; writes remain blocked"
+        + (detail === "" ? "" : ": " + detail))
+  }
+
+  function restoreLastPersistedConfig() {
+    root.configWritePending = false
+    root.pendingConfigText = ""
+    if (!root.configReady) return
+    if (root.lastConfigText !== "")
+      root.loadConfig(root.lastConfigText)
+    else
+      root.applyConfig({})
   }
 
   function persistConfig(nextConfig) {
-    if (!root.configReady || root.configWriteBlocked) {
+    if (!root.configReady || root.configWriteBlocked || root.configHelperPath === "") {
       console.warn("home-zone: refusing to write before the user config is ready")
       return false
     }
-    var serialized = JSON.stringify(nextConfig, null, 2)
+    // The helper accepts exactly one bounded JSON line on stdin and publishes
+    // a normalized, pretty-printed file only after validating the target.
+    var serialized = JSON.stringify(nextConfig)
     if (!root.loadConfig(serialized)) return false
-    configFile.setText(serialized + "\n")
+    root.pendingConfigText = serialized
+    root.configWritePending = true
+    root.startConfigWrite()
     return true
+  }
+
+  function startConfigWrite() {
+    if (!root.configWritePending || configWriteProcess.running || configReadProcess.running
+        || root.configHelperPath === "" || root.configWriteBlocked) return
+    root.activeConfigWriteText = root.pendingConfigText
+    root.configWritePending = false
+    configWriteProcess.running = true
+  }
+
+  function requestConfigRead() {
+    if (root.configHelperPath === "") return
+    if (configReadProcess.running || configWriteProcess.running || root.configWritePending) {
+      root.configReadPending = true
+      return
+    }
+    root.configReadPending = false
+    configReadProcess.running = true
   }
 
   function persistLauncherApps(appIds) {
@@ -359,7 +399,7 @@ Item {
     if (!root.configReady || root.configWriteBlocked) {
       root.settingsOpenPending = true
       root.configLoadFailures = 0
-      configReloadTimer.restart()
+      root.requestConfigRead()
       return
     }
     settingsOverlay.openForConfig(root.cfg)
@@ -419,37 +459,84 @@ Item {
     })
   }
 
-  // Горячая перезагрузка конфига (паттерн из Color.qml userShellFile)
-  FileView {
-    id: configFile
-    path: root.configPath
-    watchChanges: true
-    atomicWrites: true
-    printErrors: false
-    onFileChanged: {
-      root.configWriteBlocked = true
-      root.configLoadFailures = 0
-      // FileView also emits fileChanged for setText(). Reloading from inside
-      // that signal races the asynchronous atomic write and can be dropped,
-      // leaving writes blocked until the settings panel is reopened.
-      configReloadTimer.restart()
+  Process {
+    id: configReadProcess
+    running: false
+    command: root.configHelperPath === "" ? []
+      : ["/usr/bin/python3", root.configHelperPath, "read"]
+
+    stdout: StdioCollector {
+      id: configReadStdout
+      waitForEnd: true
     }
-    onSaved: root.configWriteBlocked = false
-    onSaveFailed: function(error) {
-      console.warn("home-zone: config save failed; reloading the last persisted config:", String(error))
-      root.configWriteBlocked = true
-      root.configLoadFailures = 0
-      configReloadTimer.restart()
+
+    stderr: StdioCollector {
+      id: configReadStderr
+      waitForEnd: true
     }
-    onLoaded: root.handleConfigLoaded(text())
-    onLoadFailed: function(error) { root.handleConfigLoadFailed(error) }
+
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        var nextText = String(configReadStdout.text || "")
+        // A user action may queue a newer optimistic state while this read is
+        // in flight. Never replace that state with the older read result.
+        if (!root.configWritePending
+            && (!root.configReady || nextText !== root.lastConfigText || root.configWriteBlocked))
+          root.handleConfigLoaded(nextText)
+      } else if (exitCode === 3) {
+        root.handleConfigMissing()
+      } else {
+        root.handleConfigReadFailed(
+          exitCode, String(configReadStderr.text || "").trim())
+      }
+
+      if (root.configWritePending && !root.configWriteBlocked)
+        Qt.callLater(root.startConfigWrite)
+      else if (root.configReadPending)
+        Qt.callLater(root.requestConfigRead)
+    }
+  }
+
+  Process {
+    id: configWriteProcess
+    running: false
+    stdinEnabled: true
+    command: root.configHelperPath === "" ? []
+      : ["/usr/bin/python3", root.configHelperPath, "write"]
+
+    stderr: StdioCollector {
+      id: configWriteStderr
+      waitForEnd: true
+    }
+
+    onStarted: {
+      write(root.activeConfigWriteText + "\n")
+      root.activeConfigWriteText = ""
+    }
+
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        var detail = String(configWriteStderr.text || "").trim()
+        console.warn("home-zone: secure config write failed"
+          + (detail === "" ? "" : ": " + detail))
+        root.restoreLastPersistedConfig()
+        root.configWriteBlocked = true
+        Qt.callLater(root.requestConfigRead)
+        return
+      }
+
+      if (root.configWritePending)
+        Qt.callLater(root.startConfigWrite)
+      else
+        Qt.callLater(root.requestConfigRead)
+    }
   }
 
   Timer {
-    id: configReloadTimer
-    interval: 150
-    repeat: false
-    onTriggered: configFile.reload()
+    interval: 2000
+    repeat: true
+    running: root.configHelperPath !== ""
+    onTriggered: root.requestConfigRead()
   }
 
   SettingsOverlay {

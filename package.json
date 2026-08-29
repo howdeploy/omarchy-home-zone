@@ -1,0 +1,14 @@
+{
+  "name": "omarchy-home-zone",
+  "version": "1.1.0",
+  "description": "A theme-aware, resizable and positionable desktop Home Zone for Omarchy Shell.",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/howdeploy/omarchy-home-zone.git"
+  },
+  "scripts": {
+    "test": "node --test && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'"
+  }
+}

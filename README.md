@@ -54,20 +54,19 @@ can be removed manually if it is no longer needed.
 
 ## Development
 
-`install.sh` is a **development helper; the official Omarchy plugin installer
-does not run it**. It synchronizes the repository working tree into the plugin
-directory for fast local iteration. The helper backs up an existing development
-installation and refuses to overwrite a Git checkout installed with
-`omarchy plugin add`.
+Clone the repository and run the same dependency-free checks used for releases:
 
 ```bash
-./install.sh
+git clone https://github.com/howdeploy/omarchy-home-zone.git
+cd omarchy-home-zone
+npm test
+omarchy plugin validate .
+qmllint -I "$OMARCHY_PATH/shell" HomeZone.qml SettingsOverlay.qml widgets/*.qml
 ```
 
 ## Configuration
 
-Home Zone watches `~/.config/omarchy/home-zone.json` and reloads it without a
-shell restart.
+Home Zone securely polls `~/.config/omarchy/home-zone.json` every two seconds and applies external edits without a shell restart.
 
 | Key | Purpose |
 |---|---|
@@ -87,8 +86,17 @@ launcher and does not trigger the fallback.
 ## Dependencies
 
 - Omarchy with its quickshell-based shell (`omarchy-shell`).
-- The `menu` tile summons Omarchy's system menu through
-  `omarchy-shell shell summon omarchy.menu`.
+- Python 3 for the small settings-boundary helper.
+- The `menu` tile summons Omarchy's system menu through `omarchy-shell shell summon omarchy.menu`.
+
+## Security and privacy
+
+Home Zone runs unsandboxed inside the long-lived `omarchy-shell` process with the user's permissions, like every third-party Omarchy Shell plugin. Review the source before enabling it.
+
+- It makes no network requests and has no install hook, daemon, service, compiled binary, package-manager action, or privilege-elevation path.
+- It reads and writes only `~/.config/omarchy/home-zone.json` through a short-lived bundled Python helper whose CLI accepts an operation, never a path.
+- The helper resolves the account home from the effective UID, opens each directory without following links, and rejects unsafe ownership or permissions, symlinks, non-regular files, multiply linked files, and settings larger than 64 KiB.
+- Writes are published atomically relative to the verified settings-directory descriptor with mode `0600`; an existing user-owned `0644` configuration is tightened automatically.
 
 ## License
 
@@ -96,5 +104,5 @@ MIT. See [LICENSE](LICENSE).
 
 ## Documentation
 
-- [Architecture and plugin lifecycle](docs/ARCHITECTURE.md)
+- [Architecture and plugin lifecycle](docs/ARCHITECTURE.en.md)
 - [Writing a Home Zone widget](docs/widget-authoring.md)
