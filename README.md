@@ -10,9 +10,11 @@ applications, an Omarchy system-menu button, and a dedicated settings button.
 
 The built-in settings window lets you select zero to four launcher applications,
 move tiles, and resize them from any edge or corner within a fixed `10 × 4` grid.
-Application selection is applied immediately, while Save and Cancel control the
-layout draft. The finer grid improves resize precision without changing the
-established `842 × 350` outer size.
+It also scales the entire Home Zone to 100%, 80%, or 60% and places it in the
+screen centre or along any screen edge. Application selection is applied
+immediately, while Save and Cancel control the layout and display draft. The
+finer grid improves resize precision without changing the established
+`842 × 350` default outer size.
 
 Every surface follows the active Omarchy theme by default through live roles such
 as `Color.accent`, `Color.bar.*`, `Color.muted`, `Color.urgent`, and
@@ -69,6 +71,7 @@ shell restart.
 
 | Key | Purpose |
 |---|---|
+| `display.size / placement` | Whole-widget scale (`default`, `small`, `mini`) and screen placement (`center`, `top`, `right`, `bottom`, `left`) |
 | `grid.columns / cellWidth / cellHeight / gap` | Grid geometry |
 | `card.visible / backgroundAlpha / radius / padding` | Outer card |
 | `colors.<widget>Background / <widget>Text` | Per-widget theme-role override for `clock`, `launcher`, `menu`, or `settings` |

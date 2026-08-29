@@ -1,4 +1,8 @@
 {
+  "display": {
+    "size": "default",
+    "placement": "center"
+  },
   "grid": {
     "columns": 10,
     "cellWidth": 68,

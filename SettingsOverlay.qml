@@ -19,6 +19,8 @@ Item {
   property bool opened: false
   property var draftConfig: ({})
   property var draftTiles: []
+  property string draftSize: "default"
+  property string draftPlacement: "center"
   property var selectedAppIds: []
   property var appRows: []
   property string searchText: ""
@@ -33,9 +35,21 @@ Item {
   readonly property int maxSelectedApps: 4
   readonly property int gridColumns: 10
   readonly property int gridRows: 4
+  readonly property var sizeOptions: [
+    { value: "default", label: "Default", tooltip: "100%" },
+    { value: "small", label: "Small", tooltip: "80%" },
+    { value: "mini", label: "Mini", tooltip: "60%" }
+  ]
+  readonly property var placementOptions: [
+    { value: "center", label: "Center" },
+    { value: "bottom", label: "Bottom" },
+    { value: "right", label: "Right" },
+    { value: "left", label: "Left" },
+    { value: "top", label: "Top" }
+  ]
 
   signal launcherAppsChanged(var appIds)
-  signal saveRequested(var nextTiles)
+  signal saveRequested(var nextTiles, string displaySize, string displayPlacement)
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value === undefined ? null : value))
@@ -46,6 +60,19 @@ Item {
     for (var i = 0; i < values.length; i++)
       if (String(values[i].widget || "") === "launcher") return i
     return -1
+  }
+
+  function normalizeDisplaySize(value) {
+    var size = String(value || "default")
+    return size === "small" || size === "mini" ? size : "default"
+  }
+
+  function normalizeDisplayPlacement(value) {
+    var placement = String(value || "center")
+    return placement === "top" || placement === "right"
+      || placement === "bottom" || placement === "left"
+      ? placement
+      : "center"
   }
 
   function defaultAppIds() {
@@ -66,6 +93,11 @@ Item {
   function openForConfig(config) {
     root.draftConfig = root.clone(config || ({}))
     root.draftTiles = root.clone(Array.isArray(root.draftConfig.tiles) ? root.draftConfig.tiles : root.defaultTiles)
+    var display = root.draftConfig.display && typeof root.draftConfig.display === "object"
+      ? root.draftConfig.display
+      : ({})
+    root.draftSize = root.normalizeDisplaySize(display.size)
+    root.draftPlacement = root.normalizeDisplayPlacement(display.placement)
     var launcherIndex = root.launcherTileIndex(root.draftTiles)
     var launcherSettings = launcherIndex >= 0 && root.draftTiles[launcherIndex].settings
       ? root.draftTiles[launcherIndex].settings
@@ -315,7 +347,7 @@ Item {
       root.feedback = "Fix the tile layout before saving."
       return
     }
-    root.saveRequested(root.clone(root.draftTiles))
+    root.saveRequested(root.clone(root.draftTiles), root.draftSize, root.draftPlacement)
   }
 
   function previewSurface(widget) {
@@ -858,6 +890,7 @@ Item {
             }
 
             Button {
+              id: resetLayoutButton
               anchors.left: parent.left
               anchors.leftMargin: 14
               anchors.top: layoutPreview.bottom
@@ -867,6 +900,54 @@ Item {
               bordered: true
               focusable: true
               onClicked: root.resetLayout()
+            }
+
+            Column {
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.top: resetLayoutButton.bottom
+              anchors.leftMargin: 14
+              anchors.rightMargin: 14
+              anchors.topMargin: 12
+              spacing: 8
+
+              Text {
+                text: "Size"
+                color: Color.popups.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.bodySmall
+                font.bold: true
+              }
+
+              ButtonGroup {
+                options: root.sizeOptions
+                value: root.draftSize
+                spacing: 6
+                foreground: Color.popups.text
+                background: "transparent"
+                accent: Color.accent
+                fontSize: Style.font.bodySmall
+                onChanged: function(value) { root.draftSize = value }
+              }
+
+              Text {
+                text: "Placement"
+                color: Color.popups.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.bodySmall
+                font.bold: true
+              }
+
+              ButtonGroup {
+                options: root.placementOptions
+                value: root.draftPlacement
+                spacing: 6
+                foreground: Color.popups.text
+                background: "transparent"
+                accent: Color.accent
+                fontSize: Style.font.bodySmall
+                onChanged: function(value) { root.draftPlacement = value }
+              }
             }
           }
         }

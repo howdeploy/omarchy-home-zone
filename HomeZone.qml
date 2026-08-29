@@ -27,6 +27,7 @@ Item {
   // ── Дефолтный конфиг (пользовательский ~/.config/omarchy/home-zone.json
   //    перекрывает; массив tiles заменяется целиком) ──
   property var defaultCfg: ({
+    display: { size: "default", placement: "center" },
     grid: { columns: 10, cellWidth: 68, cellHeight: 68, gap: 14 },
     card: { visible: true, backgroundAlpha: 0.75, radius: 18, padding: 18 },
     colors: {},
@@ -67,6 +68,43 @@ Item {
 
   readonly property real stageWidth: columns * cellW + (columns - 1) * gap
   property real stageHeight: gridHeight()
+  readonly property string displaySize: normalizeDisplaySize(
+    cfg.display ? cfg.display.size : "default")
+  readonly property string displayPlacement: normalizeDisplayPlacement(
+    cfg.display ? cfg.display.placement : "center")
+  readonly property real displayScale: scaleForDisplaySize(displaySize)
+  readonly property real baseCardWidth: stageWidth + pad * 2
+  readonly property real baseCardHeight: stageHeight + pad * 2
+  readonly property real placementMargin: 48
+
+  function normalizeDisplaySize(value) {
+    var size = String(value || "default")
+    return size === "small" || size === "mini" ? size : "default"
+  }
+
+  function normalizeDisplayPlacement(value) {
+    var placement = String(value || "center")
+    return placement === "top" || placement === "right"
+      || placement === "bottom" || placement === "left"
+      ? placement
+      : "center"
+  }
+
+  function scaleForDisplaySize(value) {
+    if (value === "small") return 0.8
+    if (value === "mini") return 0.6
+    return 1
+  }
+
+  function placementOffset(available, scaledSize, axis) {
+    var room = Math.max(0, available - scaledSize)
+    var edgeInset = Math.min(root.placementMargin, room / 2)
+    if ((axis === "x" && root.displayPlacement === "left")
+        || (axis === "y" && root.displayPlacement === "top")) return edgeInset
+    if ((axis === "x" && root.displayPlacement === "right")
+        || (axis === "y" && root.displayPlacement === "bottom")) return room - edgeInset
+    return room / 2
+  }
 
   function colorOverride(keys, fallback) {
     var colors = cfg && cfg.colors ? cfg.colors : ({})
@@ -266,10 +304,10 @@ Item {
     return root.persistConfig(next)
   }
 
-  // Layout Save owns geometry only. All settings are taken from the latest
-  // loaded config, so a stale overlay draft can never replace appIds or other
-  // settings that changed while the plugin was reloading.
-  function persistLayout(draftTiles) {
+  // Layout Save owns tile geometry and the display presets only. All other
+  // settings are taken from the latest loaded config, so a stale overlay draft
+  // can never replace appIds or other settings changed during a reload.
+  function persistLayout(draftTiles, displaySize, displayPlacement) {
     if (!root.configReady || root.configWriteBlocked || !Array.isArray(draftTiles)) return false
     var next = root.clone(root.cfg || root.defaultCfg)
     var currentTiles = Array.isArray(next.tiles) ? next.tiles : []
@@ -293,6 +331,10 @@ Item {
       current.rowspan = Number(draft.rowspan)
     }
     next.tiles = currentTiles
+    if (!next.display || typeof next.display !== "object" || Array.isArray(next.display))
+      next.display = ({})
+    next.display.size = root.normalizeDisplaySize(displaySize)
+    next.display.placement = root.normalizeDisplayPlacement(displayPlacement)
     return root.persistConfig(next)
   }
 
@@ -325,7 +367,20 @@ Item {
 
   function diagnostics(_arg) {
     return JSON.stringify({
-      card: { width: root.stageWidth + root.pad * 2, height: root.stageHeight + root.pad * 2 },
+      card: {
+        width: cardPlacement.width,
+        height: cardPlacement.height,
+        baseWidth: root.baseCardWidth,
+        baseHeight: root.baseCardHeight,
+        x: cardPlacement.x,
+        y: cardPlacement.y
+      },
+      display: {
+        size: root.displaySize,
+        placement: root.displayPlacement,
+        scale: root.displayScale,
+        edgeMargin: root.placementMargin
+      },
       grid: { columns: root.columns, cellWidth: root.cellW, cellHeight: root.cellH, gap: root.gap },
       palette: {
         foreground: String(Color.foreground),
@@ -396,8 +451,8 @@ Item {
       if (!root.persistLauncherApps(appIds))
         settingsOverlay.feedback = "Configuration is reloading. Try again in a moment."
     }
-    onSaveRequested: function(nextTiles) {
-      if (root.persistLayout(nextTiles)) settingsOverlay.close()
+    onSaveRequested: function(nextTiles, displaySize, displayPlacement) {
+      if (root.persistLayout(nextTiles, displaySize, displayPlacement)) settingsOverlay.close()
       else settingsOverlay.feedback = "Configuration is reloading. Try Save again."
     }
   }
@@ -413,27 +468,36 @@ Item {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
     // Клики принимает только карточка; остальная область — сквозная.
-    mask: Region { item: card }
+    mask: Region { item: cardPlacement }
 
-    BorderSurface {
-      id: card
-      width: root.stageWidth + root.pad * 2
-      height: root.stageHeight + root.pad * 2
-      anchors.centerIn: parent
-      radius: root.cfg.card ? root.cfg.card.radius : 18
-      color: root.cardBg
-      borderSpec: Border.none()
+    Item {
+      id: cardPlacement
+      width: root.baseCardWidth * root.displayScale
+      height: root.baseCardHeight * root.displayScale
+      x: root.placementOffset(panel.width, width, "x")
+      y: root.placementOffset(panel.height, height, "y")
       visible: root.cfg.card ? root.cfg.card.visible !== false : true
 
-      Item {
-        id: content
-        anchors.fill: parent
-        anchors.margins: root.pad
+      BorderSurface {
+        id: card
+        width: root.baseCardWidth
+        height: root.baseCardHeight
+        scale: root.displayScale
+        transformOrigin: Item.TopLeft
+        radius: root.cfg.card ? root.cfg.card.radius : 18
+        color: root.cardBg
+        borderSpec: Border.none()
 
-        Repeater {
-          id: tilesRepeater
-          model: root.tiles
-          delegate: tileComponent
+        Item {
+          id: content
+          anchors.fill: parent
+          anchors.margins: root.pad
+
+          Repeater {
+            id: tilesRepeater
+            model: root.tiles
+            delegate: tileComponent
+          }
         }
       }
     }
